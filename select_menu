@@ -3,23 +3,35 @@
 
 
 import signal
-from tui_gui.select_menu import initialize, parse_args
+from optparse import OptionParser
+from tui_gui.select_menu import Menu
 
 def sigwinch_handler(signum, frame):
   if old_winch_handler:
     old_winch_handler(signum, frame)
   menu.show()
+old_winch_handler = signal.signal(signal.SIGWINCH, sigwinch_handler)
 
-old_winch_handler = None
-if __name__ == '__main__':
-  old_winch_handler = signal.signal(signal.SIGWINCH, sigwinch_handler)
-  initialize()
-  menu = parse_args(('[sub1]','l1,text 1,t1|l2,text 2,t2','[sub2]','l22,text22,t22'))
-  menu.show()
-  print
-  menu = parse_args('l1,text 1,t1|\\[\e[0;32m\\]l2\\[\e[0m\\],text 2,t2|l3,text 3,t3|l4,text 4,t4|l5,text 5,t5|l6,text 6,t6|l7,text 7,t7|l10,text 10,t10')
-  item_choosen = menu.handle()
-  if item_choosen == 'cancelled':
-    print 'User cancelled the operation.'
-  elif item_choosen != None:
-    print(item_choosen.get_tag())
+# TODO: add argument for a timeout
+#       - in seconds
+#       - give progress
+parser = OptionParser(usage="%prog [options] RESULT_FILE MENU_ITEMS")
+parser.add_option("-d", "--default_tag", 
+                  help="Default tag to select. This will be selected when the user presses enter without entering anything.")
+parser.add_option("-t", "--timeout", type="int", 
+                  help="Timeout for the selection in seconds. If a default tag is indicated, this will be returned. When the timeout <= 0, it means no timeout.",
+                  default=0)
+parser.add_option("-p", "--prompt",
+                  help="Prompt to show to the user",
+                  default="Please make your choice: ")
+(options, args) = parser.parse_args()
+result_filename = args[0]
+del args[0]
+menu = Menu(args, prompt=options.prompt, default_tag=options.default_tag, timeout=options.timeout)
+item_choosen = menu.handle()
+result_file = file(result_filename, "w")
+if item_choosen == Menu.CANCELLED:
+  print >> result_file, ''
+else:
+  print >> result_file, item_choosen.get_tag()
+result_file.close()

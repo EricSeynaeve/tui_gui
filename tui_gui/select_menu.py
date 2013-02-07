@@ -5,7 +5,6 @@ import sys
 import os
 import signal
 import time
-import readline
 import subprocess
 import re
 # a more complete readline library from http://pypi.python.org/pypi/rl
@@ -13,6 +12,7 @@ import re
 import rl.readline as readline
 from tui_gui.exceptions import MenuParseError
 from tui_gui.exceptions import MenuNoItemFound
+from tui_gui.exceptions import NoDefaultTagInArguments
 
 __strip_re = re.compile(r'\\\[.*?\\\]')
 def get_string_len(string):
@@ -49,9 +49,9 @@ class Item:
     return 3
 
   def show(self, max_label_len, max_text_len):
-    sys.stdout.write('[')
     text_len = get_string_len(self.get_label())
     sys.stdout.write(' '*(max_label_len-text_len))
+    sys.stdout.write('[')
     print_string(self.get_label())
     sys.stdout.write('] ')
     text_len = get_string_len(self.get_text())
@@ -94,6 +94,11 @@ class SubMenu:
       if strip_string(item.get_label()) == label:
         return item
     return None
+  def find_item_by_tag(self, tag):
+    for item in self.get_items():
+      if strip_string(item.get_tag()) == tag:
+        return item
+    return None
 
   def show(self, screen_width = None): 
     if screen_width == None:
@@ -119,13 +124,44 @@ class SubMenu:
     return '['+','.join([str(item) for item in self.get_items()])+']'
     
 class Menu:
-  def __init__(self, prompt = 'Please make your choice: '):
+  CANCELLED = 'cancelled'
+  def __init__(self, args, prompt, default_tag=None, timeout=0, item_format='label,text,tag', item_delimiter='|', element_delimiter=','):
+    self.clear()
+    self.set_prompt(prompt)
+    if not isinstance(timeout, int) or timeout < 0:
+      timeout = 0
+    self.timeout = timeout
+    self.default_tag = default_tag
+    self.parse_args(args, item_format, item_delimiter, element_delimiter)
+
+  def clear(self):
     self.submenus = []
     self._tags = set()
     self._labels = set()
-    self.set_prompt(prompt)
     self._position_saved = False
     self.answer = ''
+
+  def parse_args(self, args, item_format, item_delimiter, element_delimiter):
+    if isinstance(args, str):
+      args=(args,)
+
+    self.clear()
+    submenu = None
+    default_tag_exists = False
+    for arg in args:
+      if arg.startswith('['):
+        submenu = self.new_submenu(arg.lstrip('[').rstrip(']'))
+      else:
+        if submenu == None:
+          submenu = self.new_submenu()
+        for item in arg.split(item_delimiter):
+          (label, text, tag) = item.split(element_delimiter)
+          self.add_item(submenu, tag, label, text)
+          if self.default_tag != None and tag == self.default_tag:
+            default_tag_exists = True
+        submenu = None
+    if self.default_tag != None and default_tag_exists == False:
+      raise NoDefaultTagInArguments(self.default_tag, arg)
 
   def new_submenu(self, title = None):
     sm = SubMenu(title)
@@ -163,6 +199,12 @@ class Menu:
       if item != None:
         return item
     raise MenuNoItemFound('label', label)
+  def find_item_by_tag(self, tag):
+    for submenu in self.get_submenus():
+      item = submenu.find_item_by_tag(tag)
+      if item != None:
+        return item
+    raise MenuNoItemFound('tag', tag)
 
   def show(self):
     MenuScreen.set_cursor_at(0,0)
@@ -176,6 +218,7 @@ class Menu:
     sys.stdout.write(readline.get_line_buffer()[readline.get_rl_point():])
     MenuScreen.restore_position()
     sys.stdout.flush()
+
   def handle(self):
     MenuScreen.clear()
     item = None
@@ -184,14 +227,14 @@ class Menu:
       sys.stdout.write('\r')
       try:
         self.answer = raw_input(self.get_prompt())
-        item = self.find_item_by_label(self.answer)
-      except MenuNoItemFound:
-        print "Unknown choice ("+self.answer+")"
-        return None
+        print self.answer
+        if self.default_tag != None and self.answer == '':
+          item = self.find_item_by_tag(self.default_tag)
+        else:
+          item = self.find_item_by_label(self.answer)
       except EOFError:
-        print
-        return 'cancelled'
-      print "Your choice: ", item.get_text()
+        # TODO: find out how to cancel on ESC instead of CTRL-D
+        return Menu.CANCELLED
     return item 
 
   def __str__(self):
@@ -251,28 +294,3 @@ class MenuScreen:
       except:
         cr = (80, 25)
     return int(cr[0]), int(cr[1])
-    
-def initialize():
-  item_format = 'label,text,tag'
-  global item_delimiter 
-  item_delimiter = '|'
-  global element_delimiter 
-  element_delimiter = ','
-
-def parse_args(args):
-  if isinstance(args, str):
-    args=(args,)
-
-  menu = Menu()
-  submenu = None
-  for arg in args:
-    if arg.startswith('['):
-      submenu = menu.new_submenu(arg.lstrip('[').rstrip(']'))
-    else:
-      if submenu == None:
-        submenu = menu.new_submenu()
-      for item in arg.split(item_delimiter):
-        (label, text, tag) = item.split(element_delimiter)
-        menu.add_item(submenu, tag, label, text)
-      submenu = None
-  return menu
