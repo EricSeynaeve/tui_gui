@@ -21,3 +21,12 @@ class NoDefaultTagInArguments(BaseException):
     self.arg_list = arg_list
   def __str__(self):
     return "The default tag '"+self.default_tag+"' was not found in the passed argument list ("+self.arg_list+")"
+
+class Timeout(BaseException):
+  def __init__(self, secs = None):
+    self.secs = secs
+  def __str__(self):
+    if secs:
+      return "Timeout after "+str(self.secs)+" seconds."
+    else:
+      return "Timeout occured"

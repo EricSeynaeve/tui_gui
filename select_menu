@@ -12,13 +12,10 @@ def sigwinch_handler(signum, frame):
   menu.show()
 old_winch_handler = signal.signal(signal.SIGWINCH, sigwinch_handler)
 
-# TODO: add argument for a timeout
-#       - in seconds
-#       - give progress
 parser = OptionParser(usage="%prog [options] RESULT_FILE MENU_ITEMS")
 parser.add_option("-d", "--default_tag", 
                   help="Default tag to select. This will be selected when the user presses enter without entering anything.")
-parser.add_option("-t", "--timeout", type="int", 
+parser.add_option("-t", "--timeout", type="float", 
                   help="Timeout for the selection in seconds. If a default tag is indicated, this will be returned. When the timeout <= 0, it means no timeout.",
                   default=0)
 parser.add_option("-p", "--prompt",

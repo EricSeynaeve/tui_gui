@@ -7,12 +7,14 @@ import signal
 import time
 import subprocess
 import re
+from threading import Thread
 # a more complete readline library from http://pypi.python.org/pypi/rl
 # I only need get_rl_point() as extra
 import rl.readline as readline
 from tui_gui.exceptions import MenuParseError
 from tui_gui.exceptions import MenuNoItemFound
 from tui_gui.exceptions import NoDefaultTagInArguments
+from tui_gui.exceptions import Timeout
 
 __strip_re = re.compile(r'\\\[.*?\\\]')
 def get_string_len(string):
@@ -125,11 +127,11 @@ class SubMenu:
     
 class Menu:
   CANCELLED = 'cancelled'
-  def __init__(self, args, prompt, default_tag=None, timeout=0, item_format='label,text,tag', item_delimiter='|', element_delimiter=','):
+  def __init__(self, args, prompt, default_tag=None, timeout=None, item_format='label,text,tag', item_delimiter='|', element_delimiter=','):
     self.clear()
     self.set_prompt(prompt)
-    if not isinstance(timeout, int) or timeout < 0:
-      timeout = 0
+    if not isinstance(timeout, float) or timeout <= 0:
+      timeout = None
     self.timeout = timeout
     self.default_tag = default_tag
     self.parse_args(args, item_format, item_delimiter, element_delimiter)
@@ -220,21 +222,44 @@ class Menu:
     sys.stdout.flush()
 
   def handle(self):
+    class __AskThread(Thread):
+      def __init__(self, menu):
+        Thread.__init__(self)
+        self.menu = menu
+        self.daemon = True
+      def run(self):
+        self.menu.answer = raw_input(self.menu.get_prompt())
+
     MenuScreen.clear()
     item = None
     while not item:
       self.show()
       sys.stdout.write('\r')
       try:
-        self.answer = raw_input(self.get_prompt())
-        print self.answer
-        if self.default_tag != None and self.answer == '':
-          item = self.find_item_by_tag(self.default_tag)
-        else:
+        self.answer = ''
+        askThread = __AskThread(self)
+        askThread.start()
+        askThread.join(self.timeout)
+        if self.answer == '':
+          # no answer given or we timed out
+          if askThread.is_alive():
+            # we timed out, cleanup the thread if we can
+            # an ugly hack, I know
+            Thread._Thread__stop(askThread)
+            # go to the next line
+            print
+            # turn echo'ing characters back on (was set off by readline)
+            subprocess.check_output(['stty', 'echo'])
+          if self.default_tag != None:
+            item = self.find_item_by_tag(self.default_tag)
+          else:
+            item = Menu.CANCELLED
+        else: 
+          # an answer was given
           item = self.find_item_by_label(self.answer)
       except EOFError:
         # TODO: find out how to cancel on ESC instead of CTRL-D
-        return Menu.CANCELLED
+        item = Menu.CANCELLED
     return item 
 
   def __str__(self):
